@@ -1,6 +1,7 @@
 package com.mycompany.myapp.web.rest;
 
 import com.mycompany.myapp.R2DbcApp;
+import com.mycompany.myapp.config.Constants;
 import com.mycompany.myapp.config.ReactivePageableHandlerMethodArgumentResolver;
 import com.mycompany.myapp.domain.Authority;
 import com.mycompany.myapp.domain.User;
@@ -10,7 +11,6 @@ import com.mycompany.myapp.service.MailService;
 import com.mycompany.myapp.service.UserService;
 import com.mycompany.myapp.service.dto.UserDTO;
 import com.mycompany.myapp.service.mapper.UserMapper;
-import com.mycompany.myapp.web.rest.errors.ExceptionTranslator;
 import com.mycompany.myapp.web.rest.vm.ManagedUserVM;
 import org.apache.commons.lang3.RandomStringUtils;
 import org.junit.jupiter.api.BeforeEach;
@@ -19,11 +19,12 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.reactive.server.WebTestClient;
-import org.springframework.transaction.annotation.Transactional;
 
-import javax.persistence.EntityManager;
 import java.time.Instant;
-import java.util.*;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -71,9 +72,6 @@ public class UserResourceIT {
     @Autowired
     private ExceptionTranslator exceptionTranslator;
 
-    @Autowired
-    private EntityManager em;
-
     private WebTestClient webTestClient;
 
     private User user;
@@ -94,7 +92,7 @@ public class UserResourceIT {
      * This is a static method, as tests for other entities might also need it,
      * if they test an entity which has a required relationship to the User entity.
      */
-    public static User createEntity(EntityManager em) {
+    public static User createEntity() {
         User user = new User();
         user.setLogin(DEFAULT_LOGIN + RandomStringUtils.randomAlphabetic(5));
         user.setPassword(RandomStringUtils.random(60));
@@ -104,18 +102,20 @@ public class UserResourceIT {
         user.setLastName(DEFAULT_LASTNAME);
         user.setImageUrl(DEFAULT_IMAGEURL);
         user.setLangKey(DEFAULT_LANGKEY);
+        user.setCreatedBy(Constants.SYSTEM_ACCOUNT);
         return user;
     }
 
     @BeforeEach
     public void initTest() {
-        user = createEntity(em);
+        userRepository.deleteAllUserAuthorities().block();
+        userRepository.deleteAll().block();
+        user = createEntity();
         user.setLogin(DEFAULT_LOGIN);
         user.setEmail(DEFAULT_EMAIL);
     }
 
     @Test
-    @Transactional
     public void createUser() throws Exception {
         int databaseSizeBeforeCreate = userRepository.findAll()
             .collectList().block().size();
@@ -133,7 +133,7 @@ public class UserResourceIT {
         managedUserVM.setAuthorities(Collections.singleton(AuthoritiesConstants.USER));
 
         webTestClient.post().uri("/api/users")
-            .contentType(TestUtil.APPLICATION_JSON_UTF8)
+            .contentType(MediaType.APPLICATION_JSON)
             .syncBody(TestUtil.convertObjectToJsonBytes(managedUserVM))
             .exchange()
             .expectStatus().isCreated();
@@ -148,13 +148,16 @@ public class UserResourceIT {
         assertThat(testUser.getEmail()).isEqualTo(DEFAULT_EMAIL);
         assertThat(testUser.getImageUrl()).isEqualTo(DEFAULT_IMAGEURL);
         assertThat(testUser.getLangKey()).isEqualTo(DEFAULT_LANGKEY);
+        User user1 = userService.getUserWithAuthoritiesByLogin(DEFAULT_LOGIN).block();
+
+
     }
 
     @Test
-    @Transactional
     public void createUserWithExistingId() throws Exception {
         int databaseSizeBeforeCreate = userRepository.findAll()
             .collectList().block().size();
+
 
         ManagedUserVM managedUserVM = new ManagedUserVM();
         managedUserVM.setId(1L);
@@ -170,7 +173,7 @@ public class UserResourceIT {
 
         // An entity with an existing ID cannot be created, so this API call must fail
         webTestClient.post().uri("/api/users")
-            .contentType(TestUtil.APPLICATION_JSON_UTF8)
+            .contentType(MediaType.APPLICATION_JSON)
             .syncBody(TestUtil.convertObjectToJsonBytes(managedUserVM))
             .exchange()
             .expectStatus().isBadRequest();
@@ -181,10 +184,9 @@ public class UserResourceIT {
     }
 
     @Test
-    @Transactional
     public void createUserWithExistingLogin() throws Exception {
         // Initialize the database
-        userRepository.saveAndFlush(user).block();
+        userRepository.save(user).block();
         int databaseSizeBeforeCreate = userRepository.findAll()
             .collectList().block().size();
 
@@ -201,7 +203,7 @@ public class UserResourceIT {
 
         // Create the User
         webTestClient.post().uri("/api/users")
-            .contentType(TestUtil.APPLICATION_JSON_UTF8)
+            .contentType(MediaType.APPLICATION_JSON)
             .syncBody(TestUtil.convertObjectToJsonBytes(managedUserVM))
             .exchange()
             .expectStatus().isBadRequest();
@@ -212,10 +214,9 @@ public class UserResourceIT {
     }
 
     @Test
-    @Transactional
     public void createUserWithExistingEmail() throws Exception {
         // Initialize the database
-        userRepository.saveAndFlush(user).block();
+        userRepository.save(user).block();
         int databaseSizeBeforeCreate = userRepository.findAll()
             .collectList().block().size();
 
@@ -232,7 +233,7 @@ public class UserResourceIT {
 
         // Create the User
         webTestClient.post().uri("/api/users")
-            .contentType(TestUtil.APPLICATION_JSON_UTF8)
+            .contentType(MediaType.APPLICATION_JSON)
             .syncBody(TestUtil.convertObjectToJsonBytes(managedUserVM))
             .exchange()
             .expectStatus().isBadRequest();
@@ -243,17 +244,16 @@ public class UserResourceIT {
     }
 
     @Test
-    @Transactional
     public void getAllUsers() {
         // Initialize the database
-        userRepository.saveAndFlush(user).block();
+        userRepository.save(user).block();
 
         // Get all the users
         UserDTO foundUser = webTestClient.get().uri("/api/users?sort=createdDate,DESC")
             .accept(MediaType.APPLICATION_JSON)
             .exchange()
             .expectStatus().isOk()
-            .expectHeader().contentType(MediaType.APPLICATION_JSON_UTF8)
+            .expectHeader().contentType(MediaType.APPLICATION_JSON)
             .returnResult(UserDTO.class).getResponseBody().blockFirst();
 
         assertThat(foundUser.getLogin()).isEqualTo(DEFAULT_LOGIN);
@@ -265,16 +265,16 @@ public class UserResourceIT {
     }
 
     @Test
-    @Transactional
-    public void getUser() {
+    public void getUser() throws InterruptedException {
         // Initialize the database
-        userRepository.saveAndFlush(user).block();
+        userRepository.save(user).block();
 
+        User user1 = userService.getUserWithAuthoritiesByLogin(user.getLogin()).block();
         // Get the user
         webTestClient.get().uri("/api/users/{login}", user.getLogin())
             .exchange()
             .expectStatus().isOk()
-            .expectHeader().contentType(MediaType.APPLICATION_JSON_UTF8)
+            .expectHeader().contentType(MediaType.APPLICATION_JSON)
             .expectBody()
             .jsonPath("$.login").isEqualTo(user.getLogin())
             .jsonPath("$.firstName").isEqualTo(DEFAULT_FIRSTNAME)
@@ -286,7 +286,6 @@ public class UserResourceIT {
     }
 
     @Test
-    @Transactional
     public void getNonExistingUser() {
         webTestClient.get().uri("/api/users/unknown")
             .exchange()
@@ -294,10 +293,9 @@ public class UserResourceIT {
     }
 
     @Test
-    @Transactional
     public void updateUser() throws Exception {
         // Initialize the database
-        userRepository.saveAndFlush(user).block();
+        userRepository.save(user).block();
         int databaseSizeBeforeUpdate = userRepository.findAll()
             .collectList().block().size();
 
@@ -321,7 +319,7 @@ public class UserResourceIT {
         managedUserVM.setAuthorities(Collections.singleton(AuthoritiesConstants.USER));
 
         webTestClient.put().uri("/api/users")
-            .contentType(TestUtil.APPLICATION_JSON_UTF8)
+            .contentType(MediaType.APPLICATION_JSON)
             .syncBody(TestUtil.convertObjectToJsonBytes(managedUserVM))
             .exchange()
             .expectStatus().isOk();
@@ -338,10 +336,9 @@ public class UserResourceIT {
     }
 
     @Test
-    @Transactional
     public void updateUserLogin() throws Exception {
         // Initialize the database
-        userRepository.saveAndFlush(user).block();
+        userRepository.save(user).block();
         int databaseSizeBeforeUpdate = userRepository.findAll()
             .collectList().block().size();
 
@@ -365,7 +362,7 @@ public class UserResourceIT {
         managedUserVM.setAuthorities(Collections.singleton(AuthoritiesConstants.USER));
 
         webTestClient.put().uri("/api/users")
-            .contentType(TestUtil.APPLICATION_JSON_UTF8)
+            .contentType(MediaType.APPLICATION_JSON)
             .syncBody(TestUtil.convertObjectToJsonBytes(managedUserVM))
             .exchange()
             .expectStatus().isOk();
@@ -383,10 +380,9 @@ public class UserResourceIT {
     }
 
     @Test
-    @Transactional
     public void updateUserExistingEmail() throws Exception {
         // Initialize the database with 2 users
-        userRepository.saveAndFlush(user).block();
+        userRepository.save(user).block();
 
         User anotherUser = new User();
         anotherUser.setLogin("jhipster");
@@ -397,7 +393,8 @@ public class UserResourceIT {
         anotherUser.setLastName("hipster");
         anotherUser.setImageUrl("");
         anotherUser.setLangKey("en");
-        userRepository.saveAndFlush(anotherUser).block();
+        anotherUser.setCreatedBy(Constants.SYSTEM_ACCOUNT);
+        userRepository.save(anotherUser).block();
 
         // Update the user
         User updatedUser = userRepository.findById(user.getId()).block();
@@ -419,17 +416,16 @@ public class UserResourceIT {
         managedUserVM.setAuthorities(Collections.singleton(AuthoritiesConstants.USER));
 
         webTestClient.put().uri("/api/users")
-            .contentType(TestUtil.APPLICATION_JSON_UTF8)
+            .contentType(MediaType.APPLICATION_JSON)
             .syncBody(TestUtil.convertObjectToJsonBytes(managedUserVM))
             .exchange()
             .expectStatus().isBadRequest();
     }
 
     @Test
-    @Transactional
     public void updateUserExistingLogin() throws Exception {
         // Initialize the database
-        userRepository.saveAndFlush(user).block();
+        userRepository.save(user).block();
 
         User anotherUser = new User();
         anotherUser.setLogin("jhipster");
@@ -440,7 +436,8 @@ public class UserResourceIT {
         anotherUser.setLastName("hipster");
         anotherUser.setImageUrl("");
         anotherUser.setLangKey("en");
-        userRepository.saveAndFlush(anotherUser).block();
+        anotherUser.setCreatedBy(Constants.SYSTEM_ACCOUNT);
+        userRepository.save(anotherUser).block();
 
         // Update the user
         User updatedUser = userRepository.findById(user.getId()).block();
@@ -462,23 +459,22 @@ public class UserResourceIT {
         managedUserVM.setAuthorities(Collections.singleton(AuthoritiesConstants.USER));
 
         webTestClient.put().uri("/api/users")
-            .contentType(TestUtil.APPLICATION_JSON_UTF8)
+            .contentType(MediaType.APPLICATION_JSON)
             .syncBody(TestUtil.convertObjectToJsonBytes(managedUserVM))
             .exchange()
             .expectStatus().isBadRequest();
     }
 
     @Test
-    @Transactional
     public void deleteUser() {
         // Initialize the database
-        userRepository.saveAndFlush(user).block();
+        userRepository.save(user).block();
         int databaseSizeBeforeDelete = userRepository.findAll()
             .collectList().block().size();
 
         // Delete the user
         webTestClient.delete().uri("/api/users/{login}", user.getLogin())
-            .accept(TestUtil.APPLICATION_JSON_UTF8)
+            .accept(MediaType.APPLICATION_JSON)
             .exchange()
             .expectStatus().isNoContent();
 
@@ -488,13 +484,12 @@ public class UserResourceIT {
     }
 
     @Test
-    @Transactional
     public void getAllAuthorities() {
         webTestClient.get().uri("/api/users/authorities")
-            .accept(TestUtil.APPLICATION_JSON_UTF8)
+            .accept(MediaType.APPLICATION_JSON)
             .exchange()
             .expectStatus().isOk()
-            .expectHeader().contentType(MediaType.APPLICATION_JSON_UTF8_VALUE)
+            .expectHeader().contentType(MediaType.APPLICATION_JSON_VALUE)
             .expectBody()
             .jsonPath("$").isArray()
             .jsonPath("$[?(@=='" + AuthoritiesConstants.ADMIN + "')]").hasJsonPath()
@@ -502,7 +497,6 @@ public class UserResourceIT {
     }
 
     @Test
-    @Transactional
     public void testUserEquals() throws Exception {
         TestUtil.equalsVerifier(User.class);
         User user1 = new User();

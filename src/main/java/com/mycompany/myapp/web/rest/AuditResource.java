@@ -1,7 +1,6 @@
 package com.mycompany.myapp.web.rest;
 
 import com.mycompany.myapp.service.AuditEventService;
-
 import io.github.jhipster.web.util.PaginationUtil;
 import org.springframework.boot.actuate.audit.AuditEvent;
 import org.springframework.data.domain.PageImpl;
@@ -81,7 +80,7 @@ public class AuditResource {
      * @return the {@link ResponseEntity} with status {@code 200 (OK)} and the {@link AuditEvent} in body, or status {@code 404 (Not Found)}.
      */
     @GetMapping("/{id:.+}")
-    public Mono<AuditEvent> get(@PathVariable String id) {
+    public Mono<AuditEvent> get(@PathVariable Long id) {
         return auditEventService.find(id)
             .switchIfEmpty(Mono.error(new ResponseStatusException(HttpStatus.NOT_FOUND)));
     }

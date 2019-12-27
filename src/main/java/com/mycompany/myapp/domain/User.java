@@ -1,14 +1,17 @@
 package com.mycompany.myapp.domain;
 
-import com.mycompany.myapp.config.Constants;
-
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.mycompany.myapp.config.Constants;
 import org.apache.commons.lang3.StringUtils;
-import org.hibernate.annotations.BatchSize;
 import org.hibernate.annotations.Cache;
 import org.hibernate.annotations.CacheConcurrencyStrategy;
+import org.springframework.data.annotation.Id;
+import org.springframework.data.annotation.Transient;
+import org.springframework.data.relational.core.mapping.Column;
+import org.springframework.data.relational.core.mapping.Table;
 
-import javax.persistence.*;
+import javax.persistence.GeneratedValue;
+import javax.persistence.GenerationType;
 import javax.validation.constraints.Email;
 import javax.validation.constraints.NotNull;
 import javax.validation.constraints.Pattern;
@@ -22,8 +25,7 @@ import java.util.Set;
 /**
  * A user.
  */
-@Entity
-@Table(name = "jhi_user")
+@Table("jhi_user")
 @Cache(usage = CacheConcurrencyStrategy.NONSTRICT_READ_WRITE)
 public class User extends AbstractAuditingEntity implements Serializable {
 
@@ -36,47 +38,47 @@ public class User extends AbstractAuditingEntity implements Serializable {
     @NotNull
     @Pattern(regexp = Constants.LOGIN_REGEX)
     @Size(min = 1, max = 50)
-    @Column(length = 50, unique = true, nullable = false)
+    @Column("login")
     private String login;
 
     @JsonIgnore
     @NotNull
     @Size(min = 60, max = 60)
-    @Column(name = "password_hash", length = 60, nullable = false)
+    @Column("password_hash")
     private String password;
 
     @Size(max = 50)
-    @Column(name = "first_name", length = 50)
+    @Column("first_name")
     private String firstName;
 
     @Size(max = 50)
-    @Column(name = "last_name", length = 50)
+    @Column("last_name")
     private String lastName;
 
     @Email
     @Size(min = 5, max = 254)
-    @Column(length = 254, unique = true)
+    @Column("email")
     private String email;
 
     @NotNull
-    @Column(nullable = false)
+    @Column("activated")
     private boolean activated = false;
 
     @Size(min = 2, max = 10)
-    @Column(name = "lang_key", length = 10)
+    @Column("lang_key")
     private String langKey;
 
     @Size(max = 256)
-    @Column(name = "image_url", length = 256)
+    @Column("image_url")
     private String imageUrl;
 
     @Size(max = 20)
-    @Column(name = "activation_key", length = 20)
+    @Column("activation_key")
     @JsonIgnore
     private String activationKey;
 
     @Size(max = 20)
-    @Column(name = "reset_key", length = 20)
+    @Column("reset_key")
     @JsonIgnore
     private String resetKey;
 
@@ -84,13 +86,7 @@ public class User extends AbstractAuditingEntity implements Serializable {
     private Instant resetDate = null;
 
     @JsonIgnore
-    @ManyToMany
-    @JoinTable(
-        name = "jhi_user_authority",
-        joinColumns = {@JoinColumn(name = "user_id", referencedColumnName = "id")},
-        inverseJoinColumns = {@JoinColumn(name = "authority_name", referencedColumnName = "name")})
-    @Cache(usage = CacheConcurrencyStrategy.NONSTRICT_READ_WRITE)
-    @BatchSize(size = 20)
+    @Transient
     private Set<Authority> authorities = new HashSet<>();
 
     public Long getId() {

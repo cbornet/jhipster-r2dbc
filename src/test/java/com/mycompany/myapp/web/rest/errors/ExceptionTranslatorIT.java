@@ -1,6 +1,7 @@
 package com.mycompany.myapp.web.rest.errors;
 
 import com.mycompany.myapp.R2DbcApp;
+import com.mycompany.myapp.web.rest.ExceptionTranslator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;

@@ -24,14 +24,13 @@ public final class SecurityUtils {
     public static Mono<String> getCurrentUserLogin() {
         return ReactiveSecurityContextHolder.getContext()
             .map(SecurityContext::getAuthentication)
-            .map(authentication -> {
-                if (authentication.getPrincipal() instanceof UserDetails) {
-                    UserDetails springSecurityUser = (UserDetails) authentication.getPrincipal();
-                    return springSecurityUser.getUsername();
-                } else if (authentication.getPrincipal() instanceof String) {
-                    return (String) authentication.getPrincipal();
+            .map(Authentication::getPrincipal)
+            .filter(principal -> principal instanceof UserDetails || principal instanceof String)
+            .map(principal -> {
+                if (principal instanceof UserDetails) {
+                    return ((UserDetails) principal).getUsername();
                 }
-                return null;
+                return (String) principal;
             });
     }
 

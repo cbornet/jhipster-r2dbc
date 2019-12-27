@@ -1,6 +1,7 @@
 package com.mycompany.myapp.security;
 
 import com.mycompany.myapp.domain.User;
+import com.mycompany.myapp.repository.UserDatabaseClientRepository;
 import com.mycompany.myapp.repository.UserRepository;
 import org.hibernate.validator.internal.constraintvalidators.hv.EmailValidator;
 import org.slf4j.Logger;
@@ -14,7 +15,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 import reactor.core.publisher.Mono;
 
-import java.util.*;
+import java.util.List;
+import java.util.Locale;
 import java.util.stream.Collectors;
 
 /**
@@ -27,8 +29,11 @@ public class DomainUserDetailsService implements ReactiveUserDetailsService {
 
     private final UserRepository userRepository;
 
-    public DomainUserDetailsService(UserRepository userRepository) {
+    private final UserDatabaseClientRepository userDatabaseClientRepository;
+
+    public DomainUserDetailsService(UserRepository userRepository, UserDatabaseClientRepository userDatabaseClientRepository) {
         this.userRepository = userRepository;
+        this.userDatabaseClientRepository = userDatabaseClientRepository;
     }
 
     @Override
@@ -37,13 +42,13 @@ public class DomainUserDetailsService implements ReactiveUserDetailsService {
         log.debug("Authenticating {}", login);
 
         if (new EmailValidator().isValid(login, null)) {
-            return userRepository.findOneWithAuthoritiesByEmailIgnoreCase(login)
+            return userDatabaseClientRepository.findOneWithAuthoritiesByEmailIgnoreCase(login)
                 .switchIfEmpty(Mono.error(new UsernameNotFoundException("User with email " + login + " was not found in the database")))
                 .map(user -> createSpringSecurityUser(login, user));
         }
 
         String lowercaseLogin = login.toLowerCase(Locale.ENGLISH);
-        return userRepository.findOneWithAuthoritiesByLogin(lowercaseLogin)
+        return userDatabaseClientRepository.findOneWithAuthoritiesByLogin(lowercaseLogin)
             .switchIfEmpty(Mono.error(new UsernameNotFoundException("User " + lowercaseLogin + " was not found in the database")))
             .map(user -> createSpringSecurityUser(lowercaseLogin, user));
 

@@ -4,13 +4,12 @@ import com.mycompany.myapp.config.Constants;
 import com.mycompany.myapp.domain.Authority;
 import com.mycompany.myapp.domain.User;
 import com.mycompany.myapp.repository.AuthorityRepository;
+import com.mycompany.myapp.repository.UserDatabaseClientRepository;
 import com.mycompany.myapp.repository.UserRepository;
 import com.mycompany.myapp.security.AuthoritiesConstants;
 import com.mycompany.myapp.security.SecurityUtils;
 import com.mycompany.myapp.service.dto.UserDTO;
-
 import io.github.jhipster.security.RandomUtil;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Pageable;
@@ -20,16 +19,18 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 import java.time.Instant;
+import java.time.OffsetDateTime;
 import java.time.temporal.ChronoUnit;
-import java.util.*;
+import java.util.HashSet;
+import java.util.Set;
 
 /**
  * Service class for managing users.
  */
 @Service
-@Transactional
 public class UserService {
 
     private final Logger log = LoggerFactory.getLogger(UserService.class);
@@ -40,12 +41,16 @@ public class UserService {
 
     private final AuthorityRepository authorityRepository;
 
-    public UserService(UserRepository userRepository, PasswordEncoder passwordEncoder, AuthorityRepository authorityRepository) {
+    private final UserDatabaseClientRepository userDatabaseClientRepository;
+
+    public UserService(UserRepository userRepository, PasswordEncoder passwordEncoder, AuthorityRepository authorityRepository, UserDatabaseClientRepository userDatabaseClientRepository) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.authorityRepository = authorityRepository;
+        this.userDatabaseClientRepository = userDatabaseClientRepository;
     }
 
+    @Transactional
     public Mono<User> activateRegistration(String key) {
         log.debug("Activating user for activation key {}", key);
         return userRepository.findOneByActivationKey(key)
@@ -58,6 +63,7 @@ public class UserService {
             .doOnNext(user -> log.debug("Activated user: {}", user));
     }
 
+    @Transactional
     public Mono<User> completePasswordReset(String newPassword, String key) {
         log.debug("Reset user password for reset key {}", key);
         return userRepository.findOneByResetKey(key)
@@ -70,6 +76,7 @@ public class UserService {
             });
     }
 
+    @Transactional
     public Mono<User> requestPasswordReset(String mail) {
         return userRepository.findOneByEmailIgnoreCase(mail)
             .filter(User::getActivated)
@@ -80,11 +87,12 @@ public class UserService {
             });
     }
 
+    @Transactional
     public Mono<User> registerUser(UserDTO userDTO, String password) {
         return userRepository.findOneByLogin(userDTO.getLogin().toLowerCase())
             .flatMap(existingUser -> {
                 if (!existingUser.getActivated()) {
-                    return userRepository.delete(existingUser);
+                    return deleteUser(existingUser);
                 } else {
                     throw new UsernameAlreadyUsedException();
                 }
@@ -92,7 +100,7 @@ public class UserService {
             .then(userRepository.findOneByEmailIgnoreCase(userDTO.getEmail()))
             .flatMap(existingUser -> {
                 if (!existingUser.getActivated()) {
-                    return userRepository.delete(existingUser);
+                    return deleteUser(existingUser);
                 } else {
                     throw new EmailAlreadyUsedException();
                 }
@@ -124,6 +132,7 @@ public class UserService {
             });
     }
 
+    @Transactional
     public Mono<User> createUser(UserDTO userDTO) {
         User user = new User();
         user.setLogin(userDTO.getLogin().toLowerCase());
@@ -143,7 +152,7 @@ public class UserService {
         user.setResetKey(RandomUtil.generateResetKey());
         user.setResetDate(Instant.now());
         user.setActivated(true);
-        return Flux.fromIterable(Optional.ofNullable(userDTO.getAuthorities()).orElse(new HashSet<>()))
+        return Flux.fromIterable(userDTO.getAuthorities() != null ? userDTO.getAuthorities() : new HashSet<>())
             .flatMap(authorityRepository::findById)
             .doOnNext(authority -> user.getAuthorities().add(authority))
             .then(createUser(user))
@@ -159,6 +168,7 @@ public class UserService {
      * @param langKey   language key.
      * @param imageUrl  image URL of user.
      */
+    @Transactional
     public Mono<Void> updateUser(String firstName, String lastName, String email, String langKey, String imageUrl) {
         return SecurityUtils.getCurrentUserLogin()
             .flatMap(userRepository::findOneByLogin)
@@ -182,6 +192,7 @@ public class UserService {
      * @param userDTO user to update.
      * @return updated user.
      */
+    @Transactional
     public Mono<UserDTO> updateUser(UserDTO userDTO) {
         return userRepository.findById(userDTO.getId())
             .flatMap(user -> {
@@ -206,6 +217,7 @@ public class UserService {
             .map(UserDTO::new);
     }
 
+    @Transactional
     private Mono<User> updateUser(User user) {
         return SecurityUtils.getCurrentUserLogin()
             .switchIfEmpty(Mono.just(Constants.SYSTEM_ACCOUNT))
@@ -215,23 +227,40 @@ public class UserService {
             });
     }
 
+    @Transactional
     private Mono<User> createUser(User user) {
         return SecurityUtils.getCurrentUserLogin()
             .switchIfEmpty(Mono.just(Constants.SYSTEM_ACCOUNT))
             .flatMap(login -> {
                 user.setCreatedBy(login);
                 user.setLastModifiedBy(login);
-                return userRepository.save(user);
+                return userRepository.save(user)
+                    .flatMap(savedUser ->
+                       Flux.fromIterable(user.getAuthorities())
+                           .flatMap(authority -> userRepository.saveUserAuthority(savedUser.getId(), authority.getName()))
+                           .then(Mono.just(savedUser))
+                    );
             });
     }
 
+    @Transactional
     public Mono<Void> deleteUser(String login) {
         return userRepository.findOneByLogin(login)
-            .flatMap(user -> userRepository.delete(user).thenReturn(user))
+            .flatMap(user ->deleteUser(user).thenReturn(user))
             .doOnNext(user -> log.debug("Deleted User: {}", user))
             .then();
     }
 
+    @Transactional
+    public Mono<Void> deleteUser(User user) {
+        if (user.getId() == null) {
+            return Mono.empty();
+        }
+        return userRepository.deleteUserAuthoritiesByUserId(user.getId())
+            .then(userRepository.delete(user));
+    }
+
+    @Transactional
     public Mono<Void> changePassword(String currentClearTextPassword, String newPassword) {
         return SecurityUtils.getCurrentUserLogin()
             .flatMap(userRepository::findOneByLogin)
@@ -250,7 +279,7 @@ public class UserService {
 
     @Transactional(readOnly = true)
     public Flux<UserDTO> getAllManagedUsers(Pageable pageable) {
-        return userRepository.findAllByLoginNot(pageable, Constants.ANONYMOUS_USER).map(UserDTO::new);
+        return userDatabaseClientRepository.findAllByLoginNot(pageable, Constants.ANONYMOUS_USER).map(UserDTO::new);
     }
 
     public Mono<Long> countManagedUsers() {
@@ -259,17 +288,17 @@ public class UserService {
 
     @Transactional(readOnly = true)
     public Mono<User> getUserWithAuthoritiesByLogin(String login) {
-        return userRepository.findOneWithAuthoritiesByLogin(login);
+        return userDatabaseClientRepository.findOneWithAuthoritiesByLogin(login);
     }
 
     @Transactional(readOnly = true)
     public Mono<User> getUserWithAuthorities(Long id) {
-        return userRepository.findOneWithAuthoritiesById(id);
+        return userDatabaseClientRepository.findOneWithAuthoritiesById(id);
     }
 
     @Transactional(readOnly = true)
     public Mono<User> getUserWithAuthorities() {
-        return SecurityUtils.getCurrentUserLogin().flatMap(userRepository::findOneWithAuthoritiesByLogin);
+        return SecurityUtils.getCurrentUserLogin().flatMap(userDatabaseClientRepository::findOneWithAuthoritiesByLogin);
     }
 
     /**
@@ -279,17 +308,24 @@ public class UserService {
      */
     @Scheduled(cron = "0 0 1 * * ?")
     public void removeNotActivatedUsers() {
-        userRepository
-            .findAllByActivatedIsFalseAndActivationKeyIsNotNullAndCreatedDateBefore(Instant.now().minus(3, ChronoUnit.DAYS))
-            .flatMap(user -> userRepository.delete(user).thenReturn(user))
-            .doOnNext(user -> log.debug("Deleted User: {}", user))
+        removeNotActivatedUsersReactively()
+            .subscribeOn(Schedulers.elastic())
             .blockLast();
+    }
+
+    @Transactional
+    public Flux<User> removeNotActivatedUsersReactively() {
+        return userRepository
+            .findAllByActivatedIsFalseAndActivationKeyIsNotNullAndCreatedDateBefore(OffsetDateTime.now().minus(3, ChronoUnit.DAYS))
+            .flatMap(user -> deleteUser(user).thenReturn(user))
+            .doOnNext(user -> log.debug("Deleted User: {}", user));
     }
 
     /**
      * Gets a list of all the authorities.
      * @return a list of all the authorities.
      */
+    @Transactional
     public Flux<String> getAuthorities() {
         return authorityRepository.findAll().map(Authority::getName);
     }
