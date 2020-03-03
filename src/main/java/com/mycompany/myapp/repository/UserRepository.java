@@ -2,11 +2,11 @@ package com.mycompany.myapp.repository;
 
 import com.mycompany.myapp.domain.Authority;
 import com.mycompany.myapp.domain.User;
-import org.reactivestreams.Publisher;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.r2dbc.core.DatabaseClient;
 import org.springframework.data.r2dbc.core.ReactiveDataAccessStrategy;
 import org.springframework.data.r2dbc.query.Criteria;
+import org.springframework.data.r2dbc.repository.Query;
 import org.springframework.data.r2dbc.repository.R2dbcRepository;
 import org.springframework.stereotype.Repository;
 import reactor.core.publisher.Flux;
@@ -21,31 +21,70 @@ import java.util.stream.Collectors;
  * Spring Data JPA repository for the {@link User} entity.
  */
 @Repository
-public class UserRepository implements R2dbcRepository<User, Long> {
+public interface UserRepository extends R2dbcRepository<User, Long>, UserRepositoryInternal {
+    @Query("SELECT * FROM jhi_user WHERE activation_key = :activationKey")
+    Mono<User> findOneByActivationKey(String activationKey);
+
+    @Query("SELECT * FROM jhi_user WHERE activated = false AND activation_key IS NOT NULL AND created_date < :dateTime")
+    Flux<User> findAllByActivatedIsFalseAndActivationKeyIsNotNullAndCreatedDateBefore(OffsetDateTime dateTime);
+
+    @Query("SELECT * FROM jhi_user WHERE reset_key = :resetKey")
+    Mono<User> findOneByResetKey(String resetKey);
+
+    @Query("SELECT * FROM jhi_user WHERE LOWER(email) = LOWER(:email)")
+    Mono<User> findOneByEmailIgnoreCase(String email);
+
+    @Query("SELECT * FROM jhi_user WHERE login = :login")
+    Mono<User> findOneByLogin(String login);
+
+    @Query("SELECT COUNT(DISTINCT id) FROM jhi_user WHERE login != :anonymousUser")
+    Mono<Long> countAllByLoginNot(String anonymousUser);
+
+    @Query("INSERT INTO jhi_user_authority VALUES(:userId, :authority)")
+    Mono<Void> saveUserAuthority(Long userId, String authority);
+
+    @Query("DELETE FROM jhi_user_authority")
+    Mono<Void> deleteAllUserAuthorities();
+
+    @Query("DELETE FROM jhi_user_authority WHERE user_id = :userId")
+    Mono<Void> deleteUserAuthoritiesByUserId(Long userId);
+}
+
+interface UserRepositoryInternal {
+    Mono<User> findOneWithAuthoritiesByLogin(String login);
+
+    Mono<User> findOneWithAuthoritiesById(Long id);
+
+    Mono<User> findOneWithAuthoritiesByEmailIgnoreCase(String email);
+
+    Flux<User> findAllByLoginNot(Pageable pageable, String login);
+
+}
+class UserRepositoryInternalImpl implements UserRepositoryInternal {
     private final DatabaseClient db;
     private final ReactiveDataAccessStrategy dataAccessStrategy;
 
-    private final UserRepositoryInternal userRepository;
-
-    public UserRepository(DatabaseClient db, ReactiveDataAccessStrategy dataAccessStrategy, UserRepositoryInternal userRepository) {
+    public UserRepositoryInternalImpl(DatabaseClient db, ReactiveDataAccessStrategy dataAccessStrategy) {
         this.db = db;
         this.dataAccessStrategy = dataAccessStrategy;
-        this.userRepository = userRepository;
     }
 
+    @Override
     public Mono<User> findOneWithAuthoritiesByLogin(String login) {
         return findOneWithAuthoritiesBy("login", login);
     }
 
+    @Override
     public Mono<User> findOneWithAuthoritiesById(Long id) {
         return findOneWithAuthoritiesBy("id", id);
     }
 
+    @Override
     public Mono<User> findOneWithAuthoritiesByEmailIgnoreCase(String email) {
         return findOneWithAuthoritiesBy("email", email.toLowerCase());
     }
 
-    public Mono<User> findOneWithAuthoritiesBy(String fieldName, Object fieldValue) {
+    private Mono<User> findOneWithAuthoritiesBy(String fieldName, Object fieldValue) {
         return db.execute("SELECT * FROM jhi_user u LEFT JOIN jhi_user_authority ua ON u.id=ua.user_id WHERE u." + fieldName + " = :" + fieldName)
             .bind(fieldName, fieldValue)
             .map((row, metadata) ->
@@ -73,137 +112,13 @@ public class UserRepository implements R2dbcRepository<User, Long> {
             });
     }
 
+    @Override
     public Flux<User> findAllByLoginNot(Pageable pageable, String login) {
         return db.select().from(User.class)
             .matching(Criteria.where("login").not(login))
             .page(pageable)
             .as(User.class)
             .all();
-    }
-
-    //
-    // Delegates
-    //
-
-    public Mono<User> findOneByActivationKey(String activationKey) {
-        return userRepository.findOneByActivationKey(activationKey);
-    }
-
-    public Flux<User> findAllByActivatedIsFalseAndActivationKeyIsNotNullAndCreatedDateBefore(OffsetDateTime dateTime) {
-        return userRepository.findAllByActivatedIsFalseAndActivationKeyIsNotNullAndCreatedDateBefore(dateTime);
-    }
-
-    public Mono<User> findOneByResetKey(String resetKey) {
-        return userRepository.findOneByResetKey(resetKey);
-    }
-
-    public Mono<User> findOneByEmailIgnoreCase(String email) {
-        return userRepository.findOneByEmailIgnoreCase(email);
-    }
-
-    public Mono<User> findOneByLogin(String login) {
-        return userRepository.findOneByLogin(login);
-    }
-
-    public Mono<Long> countAllByLoginNot(String anonymousUser) {
-        return userRepository.countAllByLoginNot(anonymousUser);
-    }
-
-    public Mono<Void> saveUserAuthority(Long userId, String authority) {
-        return userRepository.saveUserAuthority(userId, authority);
-    }
-
-    public Mono<Void> deleteAllUserAuthorities() {
-        return userRepository.deleteAllUserAuthorities();
-    }
-
-    public Mono<Void> deleteUserAuthoritiesByUserId(Long userId) {
-        return userRepository.deleteUserAuthoritiesByUserId(userId);
-    }
-
-    @Override
-    public <S extends User> Mono<S> save(S s) {
-        return userRepository.save(s);
-    }
-
-    @Override
-    public <S extends User> Flux<S> saveAll(Iterable<S> iterable) {
-        return userRepository.saveAll(iterable);
-    }
-
-    @Override
-    public <S extends User> Flux<S> saveAll(Publisher<S> publisher) {
-        return userRepository.saveAll(publisher);
-    }
-
-    @Override
-    public Mono<User> findById(Long aLong) {
-        return userRepository.findById(aLong);
-    }
-
-    @Override
-    public Mono<User> findById(Publisher<Long> publisher) {
-        return userRepository.findById(publisher);
-    }
-
-    @Override
-    public Mono<Boolean> existsById(Long aLong) {
-        return userRepository.existsById(aLong);
-    }
-
-    @Override
-    public Mono<Boolean> existsById(Publisher<Long> publisher) {
-        return userRepository.existsById(publisher);
-    }
-
-    @Override
-    public Flux<User> findAll() {
-        return userRepository.findAll();
-    }
-
-    @Override
-    public Flux<User> findAllById(Iterable<Long> iterable) {
-        return userRepository.findAllById(iterable);
-    }
-
-    @Override
-    public Flux<User> findAllById(Publisher<Long> publisher) {
-        return userRepository.findAllById(publisher);
-    }
-
-    @Override
-    public Mono<Long> count() {
-        return userRepository.count();
-    }
-
-    @Override
-    public Mono<Void> deleteById(Long aLong) {
-        return userRepository.deleteById(aLong);
-    }
-
-    @Override
-    public Mono<Void> deleteById(Publisher<Long> publisher) {
-        return userRepository.deleteById(publisher);
-    }
-
-    @Override
-    public Mono<Void> delete(User user) {
-        return userRepository.delete(user);
-    }
-
-    @Override
-    public Mono<Void> deleteAll(Iterable<? extends User> iterable) {
-        return userRepository.deleteAll(iterable);
-    }
-
-    @Override
-    public Mono<Void> deleteAll(Publisher<? extends User> publisher) {
-        return userRepository.deleteAll(publisher);
-    }
-
-    @Override
-    public Mono<Void> deleteAll() {
-        return userRepository.deleteAll();
     }
 
 }

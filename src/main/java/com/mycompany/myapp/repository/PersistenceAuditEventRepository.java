@@ -1,8 +1,6 @@
 package com.mycompany.myapp.repository;
 
 import com.mycompany.myapp.domain.PersistentAuditEvent;
-import io.r2dbc.h2.codecs.DefaultCodecs;
-import org.reactivestreams.Publisher;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.r2dbc.core.DatabaseClient;
 import org.springframework.data.r2dbc.query.Criteria;
@@ -14,26 +12,41 @@ import reactor.core.publisher.Mono;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
-import java.time.ZoneOffset;
 
 /**
  * Spring Data JPA repository for the {@link PersistentAuditEvent} entity.
  */
 @Repository
-public class PersistenceAuditEventRepository implements R2dbcRepository<PersistentAuditEvent, Long> {
+public interface PersistenceAuditEventRepository extends R2dbcRepository<PersistentAuditEvent, Long>, PersistenceAuditEventRepositoryInternal {
+}
+
+interface PersistenceAuditEventRepositoryInternal {
+
+    Flux<PersistentAuditEvent> findByPrincipal(String principal);
+
+    Flux<PersistentAuditEvent> findAllByAuditEventDateBetween(Instant fromDate, Instant toDate, Pageable pageable);
+
+    Flux<PersistentAuditEvent> findByAuditEventDateBefore(OffsetDateTime before);
+
+    Flux<PersistentAuditEvent> findAllBy(Pageable pageable);
+
+    Mono<Long> countByAuditEventDateBetween(Instant fromDate, Instant toDate);
+}
+
+class PersistenceAuditEventRepositoryInternalImpl implements PersistenceAuditEventRepositoryInternal {
 
     private final DatabaseClient databaseClient;
-    private final PersistenceAuditEventRepositoryInternal persistenceAuditEventRepository;
 
-    public PersistenceAuditEventRepository(DatabaseClient databaseClient, PersistenceAuditEventRepositoryInternal persistenceAuditEventRepository) {
-        this.persistenceAuditEventRepository = persistenceAuditEventRepository;
+    public PersistenceAuditEventRepositoryInternalImpl(DatabaseClient databaseClient) {
         this.databaseClient = databaseClient;
     }
 
+    @Override
     public Flux<PersistentAuditEvent> findByPrincipal(String principal) {
         return findAllByCriteria(Criteria.where("principal").is(principal));
     }
 
+    @Override
     public Flux<PersistentAuditEvent> findAllByAuditEventDateBetween(Instant fromDate, Instant toDate, Pageable pageable) {
         // Can be removed in 0.8.3+ version of r2dbc-h2
         // See https://github.com/r2dbc/r2dbc-h2/pull/139
@@ -45,14 +58,17 @@ public class PersistenceAuditEventRepository implements R2dbcRepository<Persiste
         return findAllFromSpec(select().matching(criteria).page(pageable));
     }
 
+    @Override
     public Flux<PersistentAuditEvent> findByAuditEventDateBefore(OffsetDateTime before) {
         return findAllByCriteria(Criteria.where("event_date").lessThan(before));
     }
 
+    @Override
     public Flux<PersistentAuditEvent> findAllBy(Pageable pageable) {
         return findAllFromSpec(select().page(pageable));
     }
 
+    @Override
     public Mono<Long> countByAuditEventDateBetween(Instant fromDate, Instant toDate) {
         // Can be removed in 0.8.3+ version of r2dbc-h2
         // See https://github.com/r2dbc/r2dbc-h2/pull/139
@@ -78,89 +94,7 @@ public class PersistenceAuditEventRepository implements R2dbcRepository<Persiste
     private Flux<PersistentAuditEvent> findAllFromSpec(DatabaseClient.TypedSelectSpec<PersistentAuditEvent> spec) {
         return spec.as(PersistentAuditEvent.class).all();
     }
-
-    @Override
-    public <S extends PersistentAuditEvent> Mono<S> save(S s) {
-        return persistenceAuditEventRepository.save(s);
-    }
-
-    @Override
-    public <S extends PersistentAuditEvent> Flux<S> saveAll(Iterable<S> iterable) {
-        return persistenceAuditEventRepository.saveAll(iterable);
-    }
-
-    @Override
-    public <S extends PersistentAuditEvent> Flux<S> saveAll(Publisher<S> publisher) {
-        return persistenceAuditEventRepository.saveAll(publisher);
-    }
-
-    @Override
-    public Mono<PersistentAuditEvent> findById(Long aLong) {
-        return persistenceAuditEventRepository.findById(aLong);
-    }
-
-    @Override
-    public Mono<PersistentAuditEvent> findById(Publisher<Long> publisher) {
-        return persistenceAuditEventRepository.findById(publisher);
-    }
-
-    @Override
-    public Mono<Boolean> existsById(Long aLong) {
-        return persistenceAuditEventRepository.existsById(aLong);
-    }
-
-    @Override
-    public Mono<Boolean> existsById(Publisher<Long> publisher) {
-        return persistenceAuditEventRepository.existsById(publisher);
-    }
-
-    @Override
-    public Flux<PersistentAuditEvent> findAll() {
-        return persistenceAuditEventRepository.findAll();
-    }
-
-    @Override
-    public Flux<PersistentAuditEvent> findAllById(Iterable<Long> iterable) {
-        return persistenceAuditEventRepository.findAllById(iterable);
-    }
-
-    @Override
-    public Flux<PersistentAuditEvent> findAllById(Publisher<Long> publisher) {
-        return persistenceAuditEventRepository.findAllById(publisher);
-    }
-
-    @Override
-    public Mono<Long> count() {
-        return persistenceAuditEventRepository.count();
-    }
-
-    @Override
-    public Mono<Void> deleteById(Long aLong) {
-        return persistenceAuditEventRepository.deleteById(aLong);
-    }
-
-    @Override
-    public Mono<Void> deleteById(Publisher<Long> publisher) {
-        return persistenceAuditEventRepository.deleteById(publisher);
-    }
-
-    @Override
-    public Mono<Void> delete(PersistentAuditEvent persistentAuditEvent) {
-        return persistenceAuditEventRepository.delete(persistentAuditEvent);
-    }
-
-    @Override
-    public Mono<Void> deleteAll(Iterable<? extends PersistentAuditEvent> iterable) {
-        return persistenceAuditEventRepository.deleteAll(iterable);
-    }
-
-    @Override
-    public Mono<Void> deleteAll(Publisher<? extends PersistentAuditEvent> publisher) {
-        return persistenceAuditEventRepository.deleteAll(publisher);
-    }
-
-    @Override
-    public Mono<Void> deleteAll() {
-        return persistenceAuditEventRepository.deleteAll();
-    }
 }
+
+
+
