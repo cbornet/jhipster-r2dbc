@@ -1,6 +1,7 @@
 package com.mycompany.myapp.web.rest;
 
 import com.mycompany.myapp.R2DbcApp;
+import com.mycompany.myapp.config.Constants;
 import com.mycompany.myapp.domain.Authority;
 import com.mycompany.myapp.domain.User;
 import com.mycompany.myapp.repository.UserRepository;
@@ -17,9 +18,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.reactive.server.WebTestClient;
-import org.springframework.transaction.annotation.Transactional;
 
-import javax.persistence.EntityManager;
 import java.time.Instant;
 import java.util.*;
 import java.util.function.Consumer;
@@ -64,9 +63,6 @@ public class UserResourceIT {
     private UserMapper userMapper;
 
     @Autowired
-    private EntityManager em;
-
-    @Autowired
     private WebTestClient webTestClient;
 
     private User user;
@@ -77,7 +73,7 @@ public class UserResourceIT {
      * This is a static method, as tests for other entities might also need it,
      * if they test an entity which has a required relationship to the User entity.
      */
-    public static User createEntity(EntityManager em) {
+    public static User createEntity() {
         User user = new User();
         user.setLogin(DEFAULT_LOGIN + RandomStringUtils.randomAlphabetic(5));
         user.setPassword(RandomStringUtils.random(60));
@@ -87,18 +83,20 @@ public class UserResourceIT {
         user.setLastName(DEFAULT_LASTNAME);
         user.setImageUrl(DEFAULT_IMAGEURL);
         user.setLangKey(DEFAULT_LANGKEY);
+        user.setCreatedBy(Constants.SYSTEM_ACCOUNT);
         return user;
     }
 
     @BeforeEach
     public void initTest() {
-        user = createEntity(em);
+        userRepository.deleteAllUserAuthorities().block();
+        userRepository.deleteAll().block();
+        user = createEntity();
         user.setLogin(DEFAULT_LOGIN);
         user.setEmail(DEFAULT_EMAIL);
     }
 
     @Test
-    @Transactional
     public void createUser() throws Exception {
         int databaseSizeBeforeCreate = userRepository.findAll()
             .collectList().block().size();
@@ -135,7 +133,6 @@ public class UserResourceIT {
     }
 
     @Test
-    @Transactional
     public void createUserWithExistingId() throws Exception {
         int databaseSizeBeforeCreate = userRepository.findAll()
             .collectList().block().size();
@@ -164,10 +161,9 @@ public class UserResourceIT {
     }
 
     @Test
-    @Transactional
     public void createUserWithExistingLogin() throws Exception {
         // Initialize the database
-        userRepository.saveAndFlush(user).block();
+        userRepository.save(user).block();
         int databaseSizeBeforeCreate = userRepository.findAll()
             .collectList().block().size();
 
@@ -194,10 +190,9 @@ public class UserResourceIT {
     }
 
     @Test
-    @Transactional
     public void createUserWithExistingEmail() throws Exception {
         // Initialize the database
-        userRepository.saveAndFlush(user).block();
+        userRepository.save(user).block();
         int databaseSizeBeforeCreate = userRepository.findAll()
             .collectList().block().size();
 
@@ -224,10 +219,9 @@ public class UserResourceIT {
     }
 
     @Test
-    @Transactional
     public void getAllUsers() {
         // Initialize the database
-        userRepository.saveAndFlush(user).block();
+        userRepository.save(user).block();
 
         // Get all the users
         UserDTO foundUser = webTestClient.get().uri("/api/users?sort=createdDate,DESC")
@@ -246,10 +240,9 @@ public class UserResourceIT {
     }
 
     @Test
-    @Transactional
     public void getUser() {
         // Initialize the database
-        userRepository.saveAndFlush(user).block();
+        userRepository.save(user).block();
 
         // Get the user
         webTestClient.get().uri("/api/users/{login}", user.getLogin())
@@ -267,7 +260,6 @@ public class UserResourceIT {
     }
 
     @Test
-    @Transactional
     public void getNonExistingUser() {
         webTestClient.get().uri("/api/users/unknown")
             .exchange()
@@ -275,10 +267,9 @@ public class UserResourceIT {
     }
 
     @Test
-    @Transactional
     public void updateUser() throws Exception {
         // Initialize the database
-        userRepository.saveAndFlush(user).block();
+        userRepository.save(user).block();
         int databaseSizeBeforeUpdate = userRepository.findAll()
             .collectList().block().size();
 
@@ -320,10 +311,9 @@ public class UserResourceIT {
     }
 
     @Test
-    @Transactional
     public void updateUserLogin() throws Exception {
         // Initialize the database
-        userRepository.saveAndFlush(user).block();
+        userRepository.save(user).block();
         int databaseSizeBeforeUpdate = userRepository.findAll()
             .collectList().block().size();
 
@@ -366,10 +356,9 @@ public class UserResourceIT {
     }
 
     @Test
-    @Transactional
     public void updateUserExistingEmail() throws Exception {
         // Initialize the database with 2 users
-        userRepository.saveAndFlush(user).block();
+        userRepository.save(user).block();
 
         User anotherUser = new User();
         anotherUser.setLogin("jhipster");
@@ -380,7 +369,8 @@ public class UserResourceIT {
         anotherUser.setLastName("hipster");
         anotherUser.setImageUrl("");
         anotherUser.setLangKey("en");
-        userRepository.saveAndFlush(anotherUser).block();
+        anotherUser.setCreatedBy(Constants.SYSTEM_ACCOUNT);
+        userRepository.save(anotherUser).block();
 
         // Update the user
         User updatedUser = userRepository.findById(user.getId()).block();
@@ -409,10 +399,9 @@ public class UserResourceIT {
     }
 
     @Test
-    @Transactional
     public void updateUserExistingLogin() throws Exception {
         // Initialize the database
-        userRepository.saveAndFlush(user).block();
+        userRepository.save(user).block();
 
         User anotherUser = new User();
         anotherUser.setLogin("jhipster");
@@ -423,7 +412,8 @@ public class UserResourceIT {
         anotherUser.setLastName("hipster");
         anotherUser.setImageUrl("");
         anotherUser.setLangKey("en");
-        userRepository.saveAndFlush(anotherUser).block();
+        anotherUser.setCreatedBy(Constants.SYSTEM_ACCOUNT);
+        userRepository.save(anotherUser).block();
 
         // Update the user
         User updatedUser = userRepository.findById(user.getId()).block();
@@ -452,10 +442,9 @@ public class UserResourceIT {
     }
 
     @Test
-    @Transactional
     public void deleteUser() {
         // Initialize the database
-        userRepository.saveAndFlush(user).block();
+        userRepository.save(user).block();
         int databaseSizeBeforeDelete = userRepository.findAll()
             .collectList().block().size();
 
@@ -470,7 +459,6 @@ public class UserResourceIT {
     }
 
     @Test
-    @Transactional
     public void getAllAuthorities() {
         webTestClient.get().uri("/api/users/authorities")
             .accept(TestUtil.APPLICATION_JSON)
@@ -484,7 +472,6 @@ public class UserResourceIT {
     }
 
     @Test
-    @Transactional
     public void testUserEquals() throws Exception {
         TestUtil.equalsVerifier(User.class);
         User user1 = new User();

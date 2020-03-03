@@ -1,6 +1,7 @@
 package com.mycompany.myapp.web.rest;
 
 import com.mycompany.myapp.R2DbcApp;
+import com.mycompany.myapp.config.Constants;
 import com.mycompany.myapp.domain.User;
 import com.mycompany.myapp.repository.UserRepository;
 import com.mycompany.myapp.web.rest.vm.LoginVM;
@@ -8,6 +9,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.reactive.AutoConfigureWebTestClient;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.MediaType;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.web.reactive.server.WebTestClient;
 
@@ -28,21 +30,21 @@ public class UserJWTControllerIT {
     private WebTestClient webTestClient;
 
     @Test
-    @Transactional
     public void testAuthorize() throws Exception {
         User user = new User();
         user.setLogin("user-jwt-controller");
         user.setEmail("user-jwt-controller@example.com");
         user.setActivated(true);
         user.setPassword(passwordEncoder.encode("test"));
+        user.setCreatedBy(Constants.SYSTEM_ACCOUNT);
 
-        userRepository.saveAndFlush(user);
+        userRepository.save(user).block();
 
         LoginVM login = new LoginVM();
         login.setUsername("user-jwt-controller");
         login.setPassword("test");
         webTestClient.post().uri("/api/authenticate")
-            .contentType(TestUtil.APPLICATION_JSON)
+            .contentType(MediaType.APPLICATION_JSON)
             .syncBody(TestUtil.convertObjectToJsonBytes(login))
             .exchange()
             .expectStatus().isOk()
@@ -52,22 +54,22 @@ public class UserJWTControllerIT {
     }
 
     @Test
-    @Transactional
     public void testAuthorizeWithRememberMe() throws Exception {
         User user = new User();
         user.setLogin("user-jwt-controller-remember-me");
         user.setEmail("user-jwt-controller-remember-me@example.com");
         user.setActivated(true);
         user.setPassword(passwordEncoder.encode("test"));
+        user.setCreatedBy(Constants.SYSTEM_ACCOUNT);
 
-        userRepository.saveAndFlush(user);
+        userRepository.save(user).block();
 
         LoginVM login = new LoginVM();
         login.setUsername("user-jwt-controller-remember-me");
         login.setPassword("test");
         login.setRememberMe(true);
         webTestClient.post().uri("/api/authenticate")
-            .contentType(TestUtil.APPLICATION_JSON)
+            .contentType(MediaType.APPLICATION_JSON)
             .syncBody(TestUtil.convertObjectToJsonBytes(login))
             .exchange()
             .expectStatus().isOk()
@@ -82,7 +84,7 @@ public class UserJWTControllerIT {
         login.setUsername("wrong-user");
         login.setPassword("wrong password");
         webTestClient.post().uri("/api/authenticate")
-            .contentType(TestUtil.APPLICATION_JSON)
+            .contentType(MediaType.APPLICATION_JSON)
             .syncBody(TestUtil.convertObjectToJsonBytes(login))
             .exchange()
             .expectStatus().isUnauthorized()

@@ -2,22 +2,32 @@ package com.mycompany.myapp.config;
 
 import io.github.jhipster.config.JHipsterConstants;
 import io.github.jhipster.config.h2.H2ConfigurationHelper;
+import io.r2dbc.spi.ConnectionFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
-
+import org.springframework.core.convert.converter.Converter;
 import org.springframework.core.env.Environment;
-import org.springframework.data.jpa.repository.config.EnableJpaAuditing;
-import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
+import org.springframework.data.convert.CustomConversions;
+import org.springframework.data.convert.WritingConverter;
+import org.springframework.data.r2dbc.convert.R2dbcCustomConversions;
+import org.springframework.data.r2dbc.dialect.DialectResolver;
+import org.springframework.data.r2dbc.dialect.R2dbcDialect;
+import org.springframework.data.r2dbc.repository.config.EnableR2dbcRepositories;
 import org.springframework.transaction.annotation.EnableTransactionManagement;
 
 import java.sql.SQLException;
+import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 
 @Configuration
-@EnableJpaRepositories("com.mycompany.myapp.repository")
-@EnableJpaAuditing(auditorAwareRef = "springSecurityAuditorAware")
+@EnableR2dbcRepositories("com.mycompany.myapp.repository")
 @EnableTransactionManagement
 public class DatabaseConfiguration {
 
@@ -55,5 +65,26 @@ public class DatabaseConfiguration {
             }
         }
         return String.valueOf(port);
+    }
+
+    // Can be removed in 0.8.3+ version of r2dbc-h2
+    // See https://github.com/r2dbc/r2dbc-h2/pull/139
+    @Bean
+    public R2dbcCustomConversions r2dbcCustomConversions(ConnectionFactory connectionFactory) {
+        R2dbcDialect dialect = DialectResolver.getDialect(connectionFactory);
+        List<Object> converters = new ArrayList<>(dialect.getConverters());
+        converters.add(new InstantWriteConverter());
+        converters.addAll(R2dbcCustomConversions.STORE_CONVERTERS);
+        return new R2dbcCustomConversions(
+            CustomConversions.StoreConversions.of(dialect.getSimpleTypeHolder(), converters),
+            Collections.emptyList());
+    }
+
+    @WritingConverter
+    public class InstantWriteConverter implements Converter<Instant, OffsetDateTime> {
+
+        public OffsetDateTime convert(Instant source) {
+            return source.atOffset(ZoneOffset.UTC);
+        }
     }
 }

@@ -24,21 +24,15 @@ public final class SecurityUtils {
     public static Mono<String> getCurrentUserLogin() {
         return ReactiveSecurityContextHolder.getContext()
             .map(SecurityContext::getAuthentication)
-            .flatMap(authentication -> Mono.justOrEmpty(extractPrincipal(authentication)));
+            .map(Authentication::getPrincipal)
+            .filter(principal -> principal instanceof UserDetails || principal instanceof String)
+            .map(principal -> {
+                if (principal instanceof UserDetails) {
+                    return ((UserDetails) principal).getUsername();
+                }
+                return (String) principal;
+            });
     }
-
-    private static String extractPrincipal(Authentication authentication) {
-        if (authentication == null) {
-            return null;
-        } else if (authentication.getPrincipal() instanceof UserDetails) {
-            UserDetails springSecurityUser = (UserDetails) authentication.getPrincipal();
-            return springSecurityUser.getUsername();
-        } else if (authentication.getPrincipal() instanceof String) {
-            return (String) authentication.getPrincipal();
-        }
-        return null;
-    }
-
 
     /**
      * Get the JWT of the current user.

@@ -63,13 +63,4 @@ public class WebConfigurer implements WebFluxConfigurer {
         return new ProblemExceptionHandler(mapper, problemHandling);
     }
 
-
-    /**
-     * Initializes H2 console.
-     */
-    private void initH2Console(ServletContext servletContext) {
-        log.debug("Initialize H2 console");
-        H2ConfigurationHelper.initH2Console(servletContext);
-    }
-
 }

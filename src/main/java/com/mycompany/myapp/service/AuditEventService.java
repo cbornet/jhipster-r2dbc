@@ -13,8 +13,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 import java.time.Instant;
+import java.time.OffsetDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.HashMap;
 import java.util.Map;
@@ -28,7 +30,6 @@ import static org.springframework.boot.actuate.security.AuthenticationAuditListe
  * This is the default implementation to support SpringBoot Actuator {@code AuditEventRepository}.
  */
 @Service
-@Transactional
 public class AuditEventService {
 
     /**
@@ -60,37 +61,51 @@ public class AuditEventService {
      */
     @Scheduled(cron = "0 0 12 * * ?")
     public void removeOldAuditEvents() {
-        persistenceAuditEventRepository
-            .findByAuditEventDateBefore(Instant.now().minus(jHipsterProperties.getAuditEvents().getRetentionPeriod(), ChronoUnit.DAYS))
+        removeOldAuditEventsReactively()
+            .subscribeOn(Schedulers.elastic())
+            .block();
+    }
+
+    @Transactional
+    public Mono<Void> removeOldAuditEventsReactively() {
+        return persistenceAuditEventRepository
+            .findByAuditEventDateBefore(OffsetDateTime.now().minus(jHipsterProperties.getAuditEvents().getRetentionPeriod(), ChronoUnit.DAYS))
             .flatMap(auditEvent -> {
                 log.debug("Deleting audit data {}", auditEvent);
                 return persistenceAuditEventRepository.delete(auditEvent);
-            }).blockLast();
+            })
+            .then();
     }
 
+    @Transactional(readOnly = true)
     public Flux<AuditEvent> findAll(Pageable pageable) {
         return persistenceAuditEventRepository.findAllBy(pageable)
             .map(auditEventConverter::convertToAuditEvent);
     }
 
+    @Transactional(readOnly = true)
     public Flux<AuditEvent> findByDates(Instant fromDate, Instant toDate, Pageable pageable) {
         return persistenceAuditEventRepository.findAllByAuditEventDateBetween(fromDate, toDate, pageable)
             .map(auditEventConverter::convertToAuditEvent);
     }
 
+    @Transactional(readOnly = true)
     public Mono<AuditEvent> find(Long id) {
         return persistenceAuditEventRepository.findById(id)
             .map(auditEventConverter::convertToAuditEvent);
     }
 
+    @Transactional(readOnly = true)
     public Mono<Long> count() {
         return persistenceAuditEventRepository.count();
     }
 
+    @Transactional(readOnly = true)
     public Mono<Long> countByDates(Instant fromDate, Instant toDate) {
         return persistenceAuditEventRepository.countByAuditEventDateBetween(fromDate, toDate);
     }
 
+    @Transactional
     public Mono<PersistentAuditEvent> saveAuthenticationSuccess(String login) {
         PersistentAuditEvent persistentAuditEvent = new PersistentAuditEvent();
         persistentAuditEvent.setPrincipal(login);
@@ -99,6 +114,7 @@ public class AuditEventService {
         return persistenceAuditEventRepository.save(persistentAuditEvent);
     }
 
+    @Transactional
     public Mono<PersistentAuditEvent> saveAuthenticationError(String login, Throwable e) {
         PersistentAuditEvent persistentAuditEvent = new PersistentAuditEvent();
         persistentAuditEvent.setPrincipal(login);
